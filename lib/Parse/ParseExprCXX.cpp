@@ -261,6 +261,51 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
       }
     }
 
+    if(Tok.is(tok::kw_typename) && NextToken().is(tok::l_paren)) {
+        SourceLocation Begin = Tok.getLocation();
+        //Either we try to get the current namespace
+        if(GetLookAheadToken(2).is(tok::kw_namespace)) {
+            if(ParseTypenameNSSopeSpecifier(SS)) {
+                return true;
+            }
+            if (!Tok.is(tok::coloncolon)) {
+                Diag(Tok, diag::err_expected_coloncolon_after_typename);
+                return true;
+            }
+            ConsumeToken(); // ::
+            HasScopeSpecifier = true;
+            continue;
+        }
+        // Or the current class.
+        //However, we may have to backtrack ( found an identifier instead )
+        else {
+            UnqualifiedId Result;
+            SourceLocation loc;
+            TentativeParsingAction TPA(*this);
+            bool success = !ParseUnqualifiedId(SS, EnteringContext, true, true, true, ObjectType,  loc, Result);
+            if(Tok.isNot(tok::coloncolon)) {
+                if(success) {
+                    // Should probably create an anotation ?
+                }
+                TPA.Revert();
+                break;
+            }
+            TPA.Commit();
+            ConsumeToken(); // ::
+            Sema::NestedNameSpecInfo IdInfo(Result.Identifier, Begin, Tok.getLocation(), ObjectType);
+
+            if (Actions.ActOnCXXNestedNameSpecifier(
+                        getCurScope(), IdInfo, EnteringContext, SS, false, nullptr, OnlyNamespace)) {
+
+                SS.SetInvalid(SourceRange(Begin, Tok.getLocation()));
+                return true;
+
+            }
+            HasScopeSpecifier = true;
+            continue;
+        }
+    }
+
     // nested-name-specifier:
     //   nested-name-specifier 'template'[opt] simple-template-id '::'
 
@@ -543,6 +588,31 @@ bool Parser::ParseOptionalCXXScopeSpecifier(CXXScopeSpec &SS,
 
   return false;
 }
+
+
+bool Parser::ParseTypenameNSSopeSpecifier(CXXScopeSpec &SS) {
+
+    assert(Tok.is(tok::kw_typename) && "Expected typename");
+    SourceLocation loc = ConsumeToken();
+    BalancedDelimiterTracker T(*this, tok::l_paren, tok::r_paren);
+    if(T.consumeOpen()) {
+        Diag(Tok, diag::err_expected) << tok::l_paren;
+        return true;
+    }
+    if(Tok.is(tok::kw_namespace)) {
+        ConsumeToken();
+        if(T.consumeClose()) {
+            Diag(Tok, diag::err_expected) << tok::r_brace;
+            return true;
+        }
+        if(Actions.ActOnCurrentNamespaceScopeSpecifier(loc, Tok.getLocation(), SS)) {
+            return true;
+        }
+        return false;
+    }
+    return true;
+}
+
 
 ExprResult Parser::tryParseCXXIdExpression(CXXScopeSpec &SS, bool isAddressOfOperand,
                                            Token &Replacement) {
@@ -2440,6 +2510,19 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
                                 SourceLocation& TemplateKWLoc,
                                 UnqualifiedId &Result) {
 
+
+   if(HasUnqualifiedTypenameIdentifierExpression()) {
+        return ParseUnqualifiedTypenameExpression(SS,
+                                                            EnteringContext,
+                                                            AllowDestructorName,
+                                                            AllowConstructorName,
+                                                            false,
+                                                            ObjectType,
+                                                            TemplateKWLoc, Result);
+    }
+
+
+
   // Handle 'A::template B'. This is for template-ids which have not
   // already been annotated by ParseOptionalCXXScopeSpecifier().
   bool TemplateSpecified = false;
@@ -2448,6 +2531,21 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     TemplateSpecified = true;
     TemplateKWLoc = ConsumeToken();
   }
+
+
+  //We cached the result of a typename(class) expression
+  if(Tok.is(tok::annot_typename) && AllowConstructorName) {
+      ParsedType T = getTypeAnnotation(Tok);
+
+      Result.setConstructorName(T, Tok.getAnnotationRange().getBegin(),
+                                Tok.getAnnotationRange().getEnd());
+
+      ConsumeAnnotationToken();
+      return false;
+  }
+
+
+
 
   // unqualified-id:
   //   identifier
@@ -2486,9 +2584,10 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
 
     // If the next token is a '<', we may have a template.
     if (TemplateSpecified || Tok.is(tok::less))
-      return ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc, Id, IdLoc,
+      if(ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc, Id, IdLoc,
                                           EnteringContext, ObjectType,
-                                          Result, TemplateSpecified);
+                                          Result, TemplateSpecified))
+          return true;
     
     return false;
   }
@@ -2580,7 +2679,7 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
     }
     
     // Parse the class-name.
-    if (Tok.isNot(tok::identifier)) {
+    if (Tok.isNot(tok::identifier) && (Tok.isNot(tok::kw_typename) && NextToken().isNot(tok::l_paren))) {
       Diag(Tok, diag::err_destructor_tilde_identifier);
       return true;
     }
@@ -2617,18 +2716,24 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
         DeclScopeObj.EnterDeclaratorScope();
     }
 
-    // Parse the class-name (or template-name in a simple-template-id).
-    IdentifierInfo *ClassName = Tok.getIdentifierInfo();
-    SourceLocation ClassNameLoc = ConsumeToken();
+    IdentifierInfo *ClassName = nullptr;
+    SourceLocation ClassNameLoc;
+
+    ClassName = Tok.getIdentifierInfo();
+    ClassNameLoc = ConsumeToken();
+
+    assert(ClassName != nullptr && ClassNameLoc.isValid());
+
 
     if (TemplateSpecified || Tok.is(tok::less)) {
       Result.setDestructorName(TildeLoc, nullptr, ClassNameLoc);
-      return ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc,
+      if (ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc,
                                           ClassName, ClassNameLoc,
                                           EnteringContext, ObjectType,
-                                          Result, TemplateSpecified);
+                                          Result, TemplateSpecified))
+           return true;
     }
-
+    else {
     // Note that this is a destructor name.
     ParsedType Ty = Actions.getDestructorName(TildeLoc, *ClassName, 
                                               ClassNameLoc, getCurScope(),
@@ -2638,12 +2743,165 @@ bool Parser::ParseUnqualifiedId(CXXScopeSpec &SS, bool EnteringContext,
       return true;
 
     Result.setDestructorName(TildeLoc, Ty, ClassNameLoc);
+    }
     return false;
   }
   
   Diag(Tok, diag::err_expected_unqualified_id)
     << getLangOpts().CPlusPlus;
   return true;
+}
+
+
+bool Parser::HasUnqualifiedTypenameIdentifierExpression()  {
+    int pos = -1;
+    if(Tok.is(tok::tilde) && NextToken().is(tok::kw_typename))
+        pos = 1;
+    else if(Tok.is(tok::kw_typename))
+        pos = 0;
+    if(pos < 0)
+        return false;
+
+    if(!GetLookAheadToken(pos+1).is(tok::l_paren)
+            || !GetLookAheadToken(pos+2).is(tok::kw_class))
+        return false;
+    return true;
+}
+
+/// Extracts and idenfifier extracted from a typename(....).
+/// Does not parse the optional template parameter list
+bool Parser::ParseUnqualifiedTypenameExpression(CXXScopeSpec &SS, bool EnteringContext,
+                                                  bool AllowDestructorName,
+                                                  bool AllowConstructorName,
+                                                  bool /*AllowDeductionGuide*/,
+                                                  ParsedType ObjectType,
+                                                  SourceLocation& TemplateKWLoc,
+                                                  UnqualifiedId &Result) {
+
+    assert(Tok.isOneOf(tok::kw_typename, tok::tilde) && "Not a typename expression");
+
+    const bool isDtr = Tok.is(tok::tilde);
+
+    SourceLocation Begin = ConsumeToken();
+    if(isDtr) {
+        ConsumeToken();
+    }
+
+
+    assert(Tok.is(tok::l_paren) && "Expected (");
+    BalancedDelimiterTracker T(*this, tok::l_paren, tok::r_paren);
+    T.consumeOpen();
+
+    if(Tok.isNot(tok::kw_class)) {
+        assert(Tok.is(tok::kw_class) && "Not a typename expression");
+        return true;
+    }
+    ConsumeToken();
+    SourceLocation End = Tok.getLocation();
+    T.consumeClose();
+
+
+    if(isDtr) {
+        if(!AllowDestructorName) {
+            //Error :: unexpected dtr
+            return true;
+        }
+        CXXRecordDecl* RD = nullptr;
+        ParsedType T = Actions.getDestructorNameFromTypenameExpression(Begin, End,
+                                                                       getCurScope(), SS,
+                                                                       ObjectType, EnteringContext, RD);
+        if(!T) {
+            return true;
+        }
+        Result.setDestructorName(Begin, T, End);
+        if (Tok.is(tok::less)) {
+            if(ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc, RD->getIdentifier(), Begin,
+                                              EnteringContext, ObjectType,
+                                              Result, false))
+              return true;
+        }
+
+        return false;
+    }
+
+
+    else if(AllowConstructorName) {
+        CXXRecordDecl* RD = nullptr;
+        ParsedType T = Actions.getConstructorNameFromTypenameExpression(Begin, End,
+                                                                        getCurScope(), SS,
+                                                                        ObjectType, EnteringContext, RD);
+        if(!T) {
+            return true;
+        }
+        Result.setConstructorName(T, Begin, End);
+        // If the next token is a '<', we may have a template.
+        if (Tok.is(tok::less)) {
+            if(ParseUnqualifiedIdTemplateId(SS, TemplateKWLoc, RD->getIdentifier(), Begin,
+                                              EnteringContext, ObjectType,
+                                              Result, false))
+              return true;
+
+        }
+        return false;
+    }
+    llvm_unreachable("reached end of ParseUnqualifiedTypenameExpression");
+    return true;
+}
+
+
+//Replaced a typename(class) by a cached type
+ParsedType Parser::ParseAndAnnotateTypeFromTypenameExpression(SourceLocation & Begin, SourceLocation & End, CXXRecordDecl* & RD) {
+
+    assert(Tok.is(tok::kw_typename) && "Not a typename expression");
+    Begin = ConsumeToken();
+
+
+    assert(Tok.is(tok::l_paren) && "Expected (");
+    ConsumeParen();
+
+    if(Tok.isNot(tok::kw_class)) {
+        assert(Tok.is(tok::kw_class) && "Not a typename expression");
+        return {};
+    }
+    //class
+    ConsumeToken();
+    End = Tok.getLocation();
+
+    ParsedType Type = Actions.getTypeFromTypenameExpression(Begin, End, getCurScope(), RD);
+
+    Token NT;
+    NT.setKind(tok::annot_typename);
+    setTypeAnnotation(NT, Type);
+    NT.setAnnotationEndLoc(End);
+    NT.setLocation(Begin);
+    PP.EnterToken(NT);
+
+    ConsumeParen();
+
+    return Type;
+}
+
+ParsedType Parser::ParseTypeFromTypenameExpression(SourceLocation &Begin, SourceLocation &End, CXXRecordDecl *&RD) {
+    assert(Tok.is(tok::kw_typename) && "Not a typename expression");
+    Begin = ConsumeToken();
+
+
+    assert(Tok.is(tok::l_paren) && "Expected (");
+    ConsumeParen();
+
+    if(Tok.isNot(tok::kw_class)) {
+        assert(Tok.is(tok::kw_class) && "Not a typename expression");
+        return {};
+    }
+    //class
+    ConsumeToken();
+    End = Tok.getLocation();
+
+    ParsedType Type = Actions.getTypeFromTypenameExpression(Begin, End, getCurScope(), RD);
+
+    ConsumeParen();
+
+    return Type;
 }
 
 /// ParseCXXNewExpression - Parse a C++ new-expression. New is used to allocate

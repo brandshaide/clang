@@ -152,6 +152,12 @@ public:
   static NestedNameSpecifier *SuperSpecifier(const ASTContext &Context,
                                              CXXRecordDecl *RD);
 
+  static NestedNameSpecifier *CurrentNamespaceSpecifier(const ASTContext &Context,
+                                                        NamespaceDecl *RD);
+
+  static NestedNameSpecifier *CurrentRecordSpecifier(const ASTContext &Context,
+                                                        CXXRecordDecl *RD);
+
   /// \brief Return the prefix of this nested name specifier.
   ///
   /// The prefix contains all of the parts of the nested name
@@ -435,6 +441,10 @@ public:
   /// \brief Turn this (empty) nested-name-specifier into the global
   /// nested-name-specifier '::'.
   void MakeGlobal(ASTContext &Context, SourceLocation ColonColonLoc);
+
+  /// \brief typename(namespace) in the global namespace
+  void MakeGlobal(ASTContext &Context,
+                 SourceLocation Begin, SourceLocation End);
   
   /// \brief Turns this (empty) nested-name-specifier into '__super'
   /// nested-name-specifier.
@@ -451,6 +461,16 @@ public:
   /// \param ColonColonLoc The location of the trailing '::'.
   void MakeSuper(ASTContext &Context, CXXRecordDecl *RD, 
                  SourceLocation SuperLoc, SourceLocation ColonColonLoc);
+
+  void MakeCurrent(ASTContext &Context, CXXRecordDecl *RD,
+                 SourceLocation Begin, SourceLocation End);
+
+
+  void MakeCurrent(ASTContext &Context, NamespaceDecl *RD,
+                 SourceLocation Begin, SourceLocation End);
+
+
+
   /// \brief Make a new nested-name-specifier from incomplete source-location
   /// information.
   ///

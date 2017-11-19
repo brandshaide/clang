@@ -2764,7 +2764,9 @@ Parser::DiagnoseMissingSemiAfterTagDefinition(DeclSpec &DS, AccessSpecifier AS,
   bool MightBeDeclarator = true;
   if (Tok.isOneOf(tok::kw_typename, tok::annot_typename)) {
     // A declarator-id can't start with 'typename'.
+      if(NextToken().isNot(tok::l_paren)) {
     MightBeDeclarator = false;
+      }
   } else if (AfterScope.is(tok::annot_template_id)) {
     // If we have a type expressed as a template-id, this cannot be a
     // declarator-id (such a type cannot be redeclared in a simple-declaration).
@@ -3131,6 +3133,29 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
 
       // We're done with the declaration-specifiers.
       goto DoneWithDeclSpec;
+
+      // C++ typename-specifier:
+    case tok::kw_typename: {
+        if(HasUnqualifiedTypenameIdentifierExpression()) {
+            if(TryAnnotateTypeOrScopeToken()) {
+                DS.SetTypeSpecError();
+                goto DoneWithDeclSpec;
+            }
+            if (DSContext == DSC_class
+                    //We have a constructor, improve that ?
+                    && NextToken().is(tok::l_paren)) {
+                goto DoneWithDeclSpec;
+            }
+            continue;
+        }
+        if(TryAnnotateTypeOrScopeToken()) {
+            DS.SetTypeSpecError();
+            goto DoneWithDeclSpec;
+        }
+        if (!Tok.is(tok::kw_typename)) {
+            continue;
+        }
+    }
 
       // typedef-name
     case tok::kw___super:
@@ -3648,16 +3673,6 @@ void Parser::ParseDeclarationSpecifiers(DeclSpec &DS,
     case tok::kw_restrict:
       isInvalid = DS.SetTypeQual(DeclSpec::TQ_restrict, Loc, PrevSpec, DiagID,
                                  getLangOpts());
-      break;
-
-    // C++ typename-specifier:
-    case tok::kw_typename:
-      if (TryAnnotateTypeOrScopeToken()) {
-        DS.SetTypeSpecError();
-        goto DoneWithDeclSpec;
-      }
-      if (!Tok.is(tok::kw_typename))
-        continue;
       break;
 
     // GNU typeof support.
@@ -4581,8 +4596,12 @@ bool Parser::isTypeSpecifierQualifier() {
       return true;
     // Fall through.
   case tok::kw_typename:  // typename T::type
+      if(NextToken().is(tok::l_paren))
+          return false;
     // Annotate typenames and C++ scope specifiers.  If we get one, just
     // recurse to handle whatever we get.
+
+
     if (TryAnnotateTypeOrScopeToken())
       return true;
     if (Tok.is(tok::identifier))
@@ -4714,6 +4733,8 @@ bool Parser::isDeclarationSpecifier(bool DisambiguatingWithExpression) {
   case tok::kw_typename: // typename T::type
     // Annotate typenames and C++ scope specifiers.  If we get one, just
     // recurse to handle whatever we get.
+    if(NextToken().is(tok::l_paren))
+          return true;
     if (TryAnnotateTypeOrScopeToken())
       return true;
     if (Tok.is(tok::identifier))
@@ -5250,7 +5271,8 @@ void Parser::ParseDeclaratorInternal(Declarator &D,
       (Tok.is(tok::coloncolon) || Tok.is(tok::kw_decltype) ||
        (Tok.is(tok::identifier) &&
         (NextToken().is(tok::coloncolon) || NextToken().is(tok::less))) ||
-       Tok.is(tok::annot_cxxscope))) {
+       Tok.is(tok::annot_cxxscope)
+       ||HasUnqualifiedTypenameIdentifierExpression())) {
     bool EnteringContext = D.getContext() == Declarator::FileContext ||
                            D.getContext() == Declarator::MemberContext;
     CXXScopeSpec SS;
@@ -5532,8 +5554,8 @@ void Parser::ParseDirectDeclarator(Declarator &D) {
       // the l_paren token.
     }
 
-    if (Tok.isOneOf(tok::identifier, tok::kw_operator, tok::annot_template_id,
-                    tok::tilde)) {
+    if (Tok.isOneOf(tok::identifier, tok::kw_operator, tok::annot_template_id, tok::annot_typename,
+                    tok::tilde) || (HasUnqualifiedTypenameIdentifierExpression())) {
       // We found something that indicates the start of an unqualified-id.
       // Parse that unqualified-id.
       bool AllowConstructorName;

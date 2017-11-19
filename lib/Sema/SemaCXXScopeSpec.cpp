@@ -305,6 +305,27 @@ bool Sema::ActOnSuperScopeSpecifier(SourceLocation SuperLoc,
   return false;
 }
 
+bool Sema::ActOnCurrentNamespaceScopeSpecifier(SourceLocation BeginLoc,
+                                         SourceLocation EndLoc,
+                                         CXXScopeSpec &SS) {
+    NamespaceDecl* ND = nullptr;
+    for (Scope *S = getCurScope(); S; S = S->getParent()) {
+        if((ND = dyn_cast<NamespaceDecl>(S->getEntity()))) {
+            break;
+        }
+    }
+
+    if(ND) {
+        SS.MakeCurrent(Context, ND, BeginLoc, EndLoc);
+    }
+    //Global Namespace
+    else {
+        SS.MakeGlobalCurrent(Context, BeginLoc, EndLoc);
+    }
+    return false;
+}
+
+
 /// \brief Determines whether the given declaration is an valid acceptable
 /// result for name lookup of a nested-name-specifier.
 /// \param SD Declaration checked for nested-name-specifier.

@@ -1702,6 +1702,13 @@ def err_covariant_return_type_class_type_more_qualified : Error<
   "the function it overrides (class type %1 is more qualified than class "
   "type %2">;
 
+def err_typename_class_outside_of_class : Error <
+  "Unexpected typename(class) outside of a class declaration context" >;
+
+def err_nested_name_before_typename_class : Error <
+  "Nested-name specifier unexpected before typename(class) expression"
+>;
+
 // C++ implicit special member functions
 def note_in_declaration_of_implicit_special_member : Note<
   "while declaring the implicit "

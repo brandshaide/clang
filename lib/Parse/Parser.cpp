@@ -1634,6 +1634,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
          "Cannot be a type or scope token!");
 
   if (Tok.is(tok::kw_typename)) {
+      if(NextToken().isNot(tok::l_paren)) {
     // MSVC lets you do stuff like:
     //   typename typedef T_::D D;
     //
@@ -1724,6 +1725,7 @@ bool Parser::TryAnnotateTypeOrScopeToken() {
     Tok.setLocation(TypenameLoc);
     PP.AnnotateCachedTokens(Tok);
     return false;
+  }
   }
 
   // Remembers whether the token was originally a scope annotation.
@@ -1819,6 +1821,39 @@ bool Parser::TryAnnotateTypeOrScopeTokenAfterScopeSpec(CXXScopeSpec &SS,
     // template-id, is not part of the annotation. Fall through to
     // push that token back into the stream and complete the C++ scope
     // specifier annotation.
+  }
+
+  if(Tok.is(tok::kw_typename)) {
+      SourceLocation Begin, End;
+      CXXRecordDecl* RD;
+      ParsedType Type  = ParseAndAnnotateTypeFromTypenameExpression(Begin, End, RD);
+      if(!Type)
+          return true;
+
+      if(NextToken().isNot(tok::less)) {
+          return false;
+      }
+      TemplateTy Template;
+      UnqualifiedId TemplateName;
+      TemplateName.setIdentifier(RD->getIdentifier(), Begin);
+      bool MemberOfUnknownSpecialization;
+      if (TemplateNameKind TNK = Actions.isTemplateName(
+              getCurScope(), SS,
+              /*hasTemplateKeyword=*/false, TemplateName,
+              /*ObjectType=*/nullptr, /*EnteringContext*/false, Template,
+              MemberOfUnknownSpecialization)) {
+
+        //consume the annotation
+        ConsumeToken();
+        if (AnnotateTemplateIdToken(Template, TNK, SS, SourceLocation(),
+                                    TemplateName)) {
+          // If an unrecoverable error occurred, we need to return true here,
+          // because the token stream is in a damaged state.  We may not return
+          // a valid identifier.
+          return true;
+        }
+      }
+      return false;
   }
 
   if (Tok.is(tok::annot_template_id)) {

@@ -354,6 +354,83 @@ ParsedType Sema::getDestructorTypeForDecltype(const DeclSpec &DS,
   return ParsedType::make(T);
 }
 
+
+CXXRecordDecl* getRecordFromScope(Scope *S) {
+    //Todo : is there a method for that ?
+    DeclContext* DC = S->getEntity();
+    while(DC) {
+        if(DC->isRecord())
+            break;
+        else if(DC->isNamespace() || DC->isTranslationUnit() || DC->isFileContext())
+            DC = nullptr;
+        else
+            DC = DC->getLookupParent();
+    }
+    if(!DC) {
+        //Unexpected typename(class) outside of a class
+        return nullptr;
+    }
+    return dyn_cast<CXXRecordDecl>(DC);
+}
+
+ParsedType Sema::getDestructorNameFromTypenameExpression(SourceLocation TildeLoc,
+                                                   SourceLocation,
+                                                   Scope *S, CXXScopeSpec &SS,
+                                                   ParsedType ObjectType,
+                                                   bool EnteringContext, CXXRecordDecl* &RD) {
+    RD = getRecordFromScope(S);
+    if(!RD || ObjectType) {
+        Diag(TildeLoc, diag::err_typename_class_outside_of_class);
+        return ParsedType();
+    }
+
+    if(SS.isNotEmpty()){
+        Diag(TildeLoc, diag::err_nested_name_before_typename_class);
+        return ParsedType();
+    }
+
+    QualType Type = Context.getRecordType(RD);
+    return CreateParsedType(Type,
+                            Context.getTrivialTypeSourceInfo(Type, TildeLoc));
+}
+
+ParsedType Sema::getConstructorNameFromTypenameExpression(SourceLocation BeginLoc,
+                                                    SourceLocation EndLoc,
+                                                    Scope *S, CXXScopeSpec &SS,
+                                                    ParsedType ObjectType,
+                                                          bool EnteringContext, CXXRecordDecl *&RD) {
+
+    RD = getRecordFromScope(S);
+    if(!RD || ObjectType) {
+        Diag(BeginLoc, diag::err_typename_class_outside_of_class);
+        return ParsedType();
+    }
+
+    if(SS.isNotEmpty()){
+        Diag(BeginLoc, diag::err_nested_name_before_typename_class);
+        return ParsedType();
+    }
+
+    QualType Type = Context.getRecordType(RD);
+    return CreateParsedType(Type,
+                            Context.getTrivialTypeSourceInfo(Type, BeginLoc));
+
+}
+
+ParsedType Sema::getTypeFromTypenameExpression(SourceLocation BeginLoc, SourceLocation, Scope *S, CXXRecordDecl* & RD) {
+    RD = getRecordFromScope(S);
+    if(!RD) {
+        Diag(BeginLoc, diag::err_typename_class_outside_of_class);
+        return ParsedType();
+    }
+
+    QualType Type = Context.getRecordType(RD);
+    return CreateParsedType(Type,
+                            Context.getTrivialTypeSourceInfo(Type, BeginLoc));
+}
+
+
+
 bool Sema::checkLiteralOperatorId(const CXXScopeSpec &SS,
                                   const UnqualifiedId &Name) {
   assert(Name.getKind() == UnqualifiedId::IK_LiteralOperatorId);

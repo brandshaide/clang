@@ -127,6 +127,30 @@ NestedNameSpecifier::SuperSpecifier(const ASTContext &Context,
   return FindOrInsert(Context, Mockup);
 }
 
+NestedNameSpecifier *
+NestedNameSpecifier::CurrentNamespaceSpecifier(const ASTContext &Context,
+                          NamespaceDecl *RD) {
+
+    NestedNameSpecifier Mockup;
+    Mockup.Prefix.setPointer(nullptr);
+    Mockup.Prefix.setInt(StoredDecl);
+    Mockup.Specifier = RD;
+    return FindOrInsert(Context, Mockup);
+
+}
+
+NestedNameSpecifier *
+NestedNameSpecifier::CurrentRecordSpecifier(const ASTContext &Context,
+                          CXXRecordDecl *RD) {
+
+    NestedNameSpecifier Mockup;
+    Mockup.Prefix.setPointer(nullptr);
+    Mockup.Prefix.setInt(StoredTypeSpec);
+    Mockup.Specifier = const_cast<Type*>(Context.getRecordType(RD).getTypePtr());
+    return FindOrInsert(Context, Mockup);
+
+}
+
 NestedNameSpecifier::SpecifierKind NestedNameSpecifier::getKind() const {
   if (!Specifier)
     return Global;
@@ -612,6 +636,31 @@ void NestedNameSpecifierLocBuilder::MakeSuper(ASTContext &Context,
   // Push source-location info into the buffer.
   SaveSourceLocation(SuperLoc, Buffer, BufferSize, BufferCapacity);
   SaveSourceLocation(ColonColonLoc, Buffer, BufferSize, BufferCapacity);
+}
+
+
+void NestedNameSpecifierLocBuilder::MakeCurrent(ASTContext &Context, CXXRecordDecl *RD,
+                                                SourceLocation Begin, SourceLocation End) {
+
+    Representation = NestedNameSpecifier::CurrentRecordSpecifier(Context, RD);
+    SaveSourceLocation(Begin, Buffer, BufferSize, BufferCapacity);
+    SaveSourceLocation(End, Buffer, BufferSize, BufferCapacity);
+}
+
+
+void NestedNameSpecifierLocBuilder::MakeCurrent(ASTContext &Context, NamespaceDecl *ND,
+                                                SourceLocation Begin, SourceLocation End) {
+    Representation = NestedNameSpecifier::CurrentNamespaceSpecifier(Context, ND);
+    SaveSourceLocation(Begin, Buffer, BufferSize, BufferCapacity);
+    SaveSourceLocation(End, Buffer, BufferSize, BufferCapacity);
+}
+
+void NestedNameSpecifierLocBuilder::MakeGlobal(ASTContext &Context,
+                                               SourceLocation Begin, SourceLocation End)
+{
+    Representation = NestedNameSpecifier::GlobalSpecifier(Context);
+    SaveSourceLocation(Begin, Buffer, BufferSize, BufferCapacity);
+    SaveSourceLocation(End, Buffer, BufferSize, BufferCapacity);
 }
 
 void NestedNameSpecifierLocBuilder::MakeTrivial(ASTContext &Context, 

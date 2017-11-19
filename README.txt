@@ -25,3 +25,7 @@ on the Clang development mailing list:
 If you find a bug in Clang, please file it in the LLVM bug tracker:
   http://llvm.org/bugs/
 
+
+This branch (partially) implements a POC for `typename(class)` and `typename(namespace)`.
+
+LLVM : 08eb02abdb5c396b0b4a69c3fe9c166ec79a2202

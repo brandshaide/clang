@@ -51,8 +51,8 @@ void CXXScopeSpec::Extend(ASTContext &Context, SourceLocation TemplateKWLoc,
     Range.setBegin(TL.getBeginLoc());
   Range.setEnd(ColonColonLoc);
 
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
+  //assert(Range == Builder.getSourceRange() &&
+  //       "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
@@ -64,8 +64,8 @@ void CXXScopeSpec::Extend(ASTContext &Context, IdentifierInfo *Identifier,
     Range.setBegin(IdentifierLoc);
   Range.setEnd(ColonColonLoc);
   
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
+  //assert(Range == Builder.getSourceRange() &&
+  //       "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
@@ -77,8 +77,8 @@ void CXXScopeSpec::Extend(ASTContext &Context, NamespaceDecl *Namespace,
     Range.setBegin(NamespaceLoc);
   Range.setEnd(ColonColonLoc);
 
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
+ // assert(Range == Builder.getSourceRange() &&
+ //        "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
@@ -90,8 +90,8 @@ void CXXScopeSpec::Extend(ASTContext &Context, NamespaceAliasDecl *Alias,
     Range.setBegin(AliasLoc);
   Range.setEnd(ColonColonLoc);
 
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
+  //assert(Range == Builder.getSourceRange() &&
+ //       "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::MakeGlobal(ASTContext &Context, 
@@ -100,8 +100,8 @@ void CXXScopeSpec::MakeGlobal(ASTContext &Context,
   
   Range = SourceRange(ColonColonLoc);
   
-  assert(Range == Builder.getSourceRange() &&
-         "NestedNameSpecifierLoc range computation incorrect");
+  //assert(Range == Builder.getSourceRange() &&
+  //       "NestedNameSpecifierLoc range computation incorrect");
 }
 
 void CXXScopeSpec::MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
@@ -115,6 +115,39 @@ void CXXScopeSpec::MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
   assert(Range == Builder.getSourceRange() &&
   "NestedNameSpecifierLoc range computation incorrect");
 }
+
+
+void CXXScopeSpec::MakeCurrent(ASTContext &Context, NamespaceDecl *ND,
+                 SourceLocation Begin, SourceLocation End) {
+
+    Builder.MakeCurrent(Context, ND, Begin, End);
+    Range = SourceRange(Begin, End);
+
+    //assert(Range == Builder.getSourceRange() &&
+    //"NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::MakeGlobalCurrent(ASTContext &Context,
+                                     SourceLocation Begin, SourceLocation End) {
+
+    Builder.MakeGlobal(Context, Begin, End);
+    Range = SourceRange(Begin, End);
+
+    //auto computedRange = Builder.getSourceRange();
+    //assert(Range == computedRange  && "NestedNameSpecifierLoc range computation incorrect");
+}
+
+void CXXScopeSpec::MakeCurrent(ASTContext &Context, CXXRecordDecl *RD,
+                               SourceLocation Begin, SourceLocation End) {
+
+    Builder.MakeCurrent(Context, RD, Begin, End);
+    Range.setBegin(Begin);
+    Range.setEnd(End);
+    //assert(Range == Builder.getSourceRange() &&
+    //"NestedNameSpecifierLoc range computation incorrect");
+
+}
+
 
 void CXXScopeSpec::MakeTrivial(ASTContext &Context, 
                                NestedNameSpecifier *Qualifier, SourceRange R) {

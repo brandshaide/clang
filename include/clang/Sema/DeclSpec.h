@@ -154,6 +154,17 @@ public:
   void MakeSuper(ASTContext &Context, CXXRecordDecl *RD,
                  SourceLocation SuperLoc, SourceLocation ColonColonLoc);
 
+
+  void MakeCurrent(ASTContext &Context, NamespaceDecl *ND,
+                 SourceLocation Begin, SourceLocation End);
+
+  void MakeGlobalCurrent(ASTContext &Context,
+                         SourceLocation Begin, SourceLocation End);
+
+  void MakeCurrent(ASTContext &Context, CXXRecordDecl *RD,
+                 SourceLocation Begin, SourceLocation End);
+
+
   /// \brief Make a new nested-name-specifier from incomplete source-location
   /// information.
   ///

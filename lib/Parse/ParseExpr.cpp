@@ -916,6 +916,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
         }
       }
 
+      if(Tok.isNot(tok::kw_typename)) {
       if ((!ColonIsSacred && Next.is(tok::colon)) ||
           Next.isOneOf(tok::coloncolon, tok::less, tok::l_paren,
                        tok::l_brace)) {
@@ -926,22 +927,21 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
           return ParseCastExpression(isUnaryExpression, isAddressOfOperand);
       }
     }
+    }
 
-    // Consume the identifier so that we can see if it is followed by a '(' or
-    // '.'.
-    IdentifierInfo &II = *Tok.getIdentifierInfo();
+    IdentifierInfo *II = Tok.getIdentifierInfo();
     SourceLocation ILoc = ConsumeToken();
 
     // Support 'Class.property' and 'super.property' notation.
     if (getLangOpts().ObjC1 && Tok.is(tok::period) &&
-        (Actions.getTypeName(II, ILoc, getCurScope()) ||
+        (Actions.getTypeName(*II, ILoc, getCurScope()) ||
          // Allow the base to be 'super' if in an objc-method.
-         (&II == Ident_super && getCurScope()->isInObjcMethodScope()))) {
+         (II == Ident_super && getCurScope()->isInObjcMethodScope()))) {
       ConsumeToken();
 
-      if (Tok.is(tok::code_completion) && &II != Ident_super) {
+      if (Tok.is(tok::code_completion) && II != Ident_super) {
         Actions.CodeCompleteObjCClassPropertyRefExpr(
-            getCurScope(), II, ILoc, ExprStatementTokLoc == ILoc);
+            getCurScope(), *II, ILoc, ExprStatementTokLoc == ILoc);
         cutOffParsing();
         return ExprError();
       }
@@ -954,7 +954,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       IdentifierInfo &PropertyName = *Tok.getIdentifierInfo();
       SourceLocation PropertyLoc = ConsumeToken();
       
-      Res = Actions.ActOnClassPropertyRefExpr(II, PropertyName,
+      Res = Actions.ActOnClassPropertyRefExpr(*II, PropertyName,
                                               ILoc, PropertyLoc);
       break;
     }
@@ -963,7 +963,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     // the token sequence is ill-formed. However, if there's a ':' or ']' after
     // that identifier, this is probably a message send with a missing open
     // bracket. Treat it as such. 
-    if (getLangOpts().ObjC1 && &II == Ident_super && !InMessageExpression &&
+    if (getLangOpts().ObjC1 && II == Ident_super && !InMessageExpression &&
         getCurScope()->isInObjcMethodScope() &&
         ((Tok.is(tok::identifier) &&
          (NextToken().is(tok::colon) || NextToken().is(tok::r_square))) ||
@@ -984,7 +984,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
       const Token& Next = NextToken();
       if (Tok.is(tok::code_completion) || 
           Next.is(tok::colon) || Next.is(tok::r_square))
-        if (ParsedType Typ = Actions.getTypeName(II, ILoc, getCurScope()))
+        if (ParsedType Typ = Actions.getTypeName(*II, ILoc, getCurScope()))
           if (Typ.get()->isObjCObjectOrInterfaceType()) {
             // Fake up a Declarator to use with ActOnTypeName.
             DeclSpec DS(AttrFactory);
@@ -1028,7 +1028,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     } else {
       Validator->WantRemainingKeywords = Tok.isNot(tok::r_paren);
     }
-    Name.setIdentifier(&II, ILoc);
+    Name.setIdentifier(II, ILoc);
     Res = Actions.ActOnIdExpression(
         getCurScope(), ScopeSpec, TemplateKWLoc, Name, Tok.is(tok::l_paren),
         isAddressOfOperand, std::move(Validator),
@@ -1189,6 +1189,15 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     Res = ParseCXXThis();
     break;
 
+  case tok::kw_typename: {
+      if(HasUnqualifiedTypenameIdentifierExpression()) {
+          if(TryAnnotateTypeOrScopeToken())
+             return ExprError();
+          return ParseCastExpression(isUnaryExpression, isAddressOfOperand);
+      }
+      [[fallthrough]];
+  }
+
   case tok::annot_typename:
     if (isStartOfObjCClassMessageMissingOpenBracket()) {
       ParsedType Type = getTypeAnnotation(Tok);
@@ -1235,7 +1244,6 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
   case tok::kw__Float16:
   case tok::kw___float128:
   case tok::kw_void:
-  case tok::kw_typename:
   case tok::kw_typeof:
   case tok::kw___vector:
 #define GENERIC_IMAGE_TYPE(ImgType, Id) case tok::kw_##ImgType##_t:

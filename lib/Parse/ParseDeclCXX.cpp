@@ -1070,7 +1070,7 @@ void Parser::ParseUnderlyingTypeSpecifier(DeclSpec &DS) {
 TypeResult Parser::ParseBaseTypeSpecifier(SourceLocation &BaseLoc,
                                           SourceLocation &EndLocation) {
   // Ignore attempts to use typename
-  if (Tok.is(tok::kw_typename)) {
+  if (Tok.is(tok::kw_typename) && NextToken().isNot(tok::l_paren)) {
     Diag(Tok, diag::err_expected_class_name_not_template)
       << FixItHint::CreateRemoval(Tok.getLocation());
     ConsumeToken();

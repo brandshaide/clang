@@ -4956,6 +4956,22 @@ public:
                                ParsedType ObjectType,
                                bool EnteringContext);
 
+  ParsedType getDestructorNameFromTypenameExpression(SourceLocation TildeLoc,
+                                                     SourceLocation EndLoc,
+                                                     Scope *S, CXXScopeSpec &SS,
+                                                     ParsedType ObjectType,
+                                                     bool EnteringContext, CXXRecordDecl *&RD);
+
+  ParsedType getConstructorNameFromTypenameExpression(SourceLocation BeginLoc,
+                                                      SourceLocation EndLoc,
+                                                      Scope *S, CXXScopeSpec &SS,
+                                                      ParsedType ObjectType,
+                                                      bool EnteringContext, CXXRecordDecl *&RD);
+
+  ParsedType getTypeFromTypenameExpression(SourceLocation BeginLoc,
+                                                      SourceLocation EndLoc,
+                                                      Scope *S, CXXRecordDecl *&RD);
+
   ParsedType getDestructorTypeForDecltype(const DeclSpec &DS,
                                           ParsedType ObjectType);
 
@@ -5282,6 +5298,9 @@ public:
   /// \returns true if an error occurred, false otherwise.
   bool ActOnSuperScopeSpecifier(SourceLocation SuperLoc,
                                 SourceLocation ColonColonLoc, CXXScopeSpec &SS);
+  bool ActOnCurrentNamespaceScopeSpecifier(SourceLocation BeginLoc,
+                                           SourceLocation EndLoc,
+                                           CXXScopeSpec &SS);
 
   bool isAcceptableNestedNameSpecifier(const NamedDecl *SD,
                                        bool *CanCorrect = nullptr);

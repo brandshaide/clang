@@ -1586,6 +1586,10 @@ private:
                                       IdentifierInfo **LastII = nullptr,
                                       bool OnlyNamespace = false);
 
+
+  //Parse typename(namespace)
+  bool ParseTypenameNSSopeSpecifier(CXXScopeSpec &SS);
+
   //===--------------------------------------------------------------------===//
   // C++0x 5.1.2: Lambda expressions
 
@@ -2720,6 +2724,23 @@ public:
                           ParsedType ObjectType,
                           SourceLocation& TemplateKWLoc,
                           UnqualifiedId &Result);
+
+  ///Returns whether the we shold be parsing a typename(class) expression
+  bool HasUnqualifiedTypenameIdentifierExpression();
+
+  bool ParseUnqualifiedTypenameExpression(CXXScopeSpec &SS, bool EnteringContext,
+                                                    bool AllowDestructorName,
+                                                    bool AllowConstructorName,
+                                                    bool AllowDeductionGuide,
+                                                    ParsedType ObjectType,
+                                                    SourceLocation& TemplateKWLoc,
+                                                    UnqualifiedId &Result);
+
+  ParsedType ParseAndAnnotateTypeFromTypenameExpression(SourceLocation &Begin, SourceLocation &End, CXXRecordDecl *&RD);
+  ParsedType ParseTypeFromTypenameExpression(SourceLocation &Begin, SourceLocation &End, CXXRecordDecl *&RD);
+
+
+
 
 private:
   //===--------------------------------------------------------------------===//

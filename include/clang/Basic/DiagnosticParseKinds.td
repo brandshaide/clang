@@ -356,7 +356,8 @@ def err_expected_end_of_enumerator : Error<
   "expected '= constant-expression' or end of enumerator definition">;
 def err_expected_coloncolon_after_super : Error<
   "expected '::' after '__super'">;
-
+def err_expected_coloncolon_after_typename : Error<
+  "expected '::' after 'typename'">;
 def ext_decomp_decl_empty : ExtWarn<
   "ISO C++17 does not allow a decomposition group to be empty">,
   InGroup<DiagGroup<"empty-decomposition">>;
