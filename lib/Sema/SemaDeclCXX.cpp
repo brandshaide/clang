@@ -3587,6 +3587,15 @@ namespace {
   }
 } // namespace
 
+
+void Sema::pushClassUndergoingNSDMIParsing(CXXRecordDecl *D) {
+    Context.pushClassUndergoingNSDMIParsing(D);
+}
+
+void Sema::popClassUndergoingNSDMIParsing() {
+    Context.popClassUndergoingNSDMIParsing();
+}
+
 /// Enter a new C++ default initializer scope. After calling this, the
 /// caller must call \ref ActOnFinishCXXInClassMemberInitializer, even if
 /// parsing or instantiating the initializer failed.

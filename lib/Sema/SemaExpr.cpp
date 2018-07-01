@@ -3669,7 +3669,12 @@ bool Sema::CheckUnaryExprOrTypeTraitOperand(Expr *E,
   // Completing the expression's type may have changed it.
   ExprTy = E->getType();
   assert(!ExprTy->isReferenceType());
-
+  if (ExprTy->getContainedAutoType() && ExprTy->isUndeducedType()) {
+    // FIXME: this needs its own diagnostic message
+    Diag(E->getExprLoc(), diag::err_sizeof_alignof_incomplete_type)
+      << ExprKind << ExprTy << E->getSourceRange();
+    return true;
+  }
   if (ExprTy->isFunctionType()) {
     Diag(E->getExprLoc(), diag::err_sizeof_alignof_function_type)
       << ExprKind << E->getSourceRange();
@@ -3763,6 +3768,13 @@ bool Sema::CheckUnaryExprOrTypeTraitOperand(QualType ExprType,
                           ExprKind, ExprRange))
     return true;
 
+  if (ExprType.getCanonicalType()->getContainedAutoType() &&
+      ExprType.getCanonicalType()->isUndeducedType()) {
+    // FIXME: this needs its own diagnostic message
+    Diag(OpLoc, diag::err_sizeof_alignof_incomplete_type)
+      << ExprKind << ExprType << ExprRange;
+    return true;
+  }
   if (ExprType->isFunctionType()) {
     Diag(OpLoc, diag::err_sizeof_alignof_function_type)
       << ExprKind << ExprRange;

@@ -10629,9 +10629,22 @@ void Sema::AddInitializerToDecl(Decl *RealDecl, Expr *Init, bool DirectInit) {
       return;
     }
     Init = Res.get();
-
     if (DeduceVariableDeclarationType(VDecl, DirectInit, Init))
       return;
+    assert(VDecl->isLinkageValid());
+    // Check if the DeducedType is the same as a class whose AutoNSDMI's
+    // are being deduced - this is to prevent recursion:
+    // struct X {
+    //  auto L = [x = *this]() <-- this is not ok.
+    //                   { ... };
+    // };
+    //
+    const Type *DeducedTypePtr = VDecl->getType().getCanonicalType().getTypePtr();
+    if (Context.isClassTypeUndergoingNSDMIParsing(DeducedTypePtr)) {
+        Diag(VDecl->getLocation(), diag::err_field_incomplete) << VDecl;
+        VDecl->setInvalidDecl();
+        return;
+    }
   }
 
   // dllimport cannot be used on variable definitions.

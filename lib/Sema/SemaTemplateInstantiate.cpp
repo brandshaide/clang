@@ -2066,6 +2066,8 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
 
   TemplateDeclInstantiator Instantiator(*this, Instantiation, TemplateArgs);
   SmallVector<Decl*, 4> Fields;
+  SmallVector<std::pair<FieldDecl*, FieldDecl*>, 4> FieldsWithMemberInitializers;
+
   // Delay instantiation of late parsed attributes.
   LateInstantiatedAttrVec LateAttrs;
   Instantiator.enableLateAttributeInstantiation(&LateAttrs);
@@ -2092,6 +2094,10 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
     if (NewMember) {
       if (FieldDecl *Field = dyn_cast<FieldDecl>(NewMember)) {
         Fields.push_back(Field);
+        FieldDecl *OldField = cast<FieldDecl>(Member);
+                if (OldField->getInClassInitializer())
+                  FieldsWithMemberInitializers.push_back(std::make_pair(OldField,
+                                                                        Field));
       } else if (EnumDecl *Enum = dyn_cast<EnumDecl>(NewMember)) {
         // C++11 [temp.inst]p1: The implicit instantiation of a class template
         // specialization causes the implicit instantiation of the definitions
@@ -2132,6 +2138,37 @@ Sema::InstantiateClass(SourceLocation PointOfInstantiation,
   // default arg exprs for default constructors if necessary now.
   ActOnFinishCXXNonNestedClass(Instantiation);
 
+  // Attach any in-class member initializers now the class is complete.
+  // FIXME: We are supposed to defer instantiating these until they are needed.
+  if (!FieldsWithMemberInitializers.empty()) {
+    // C++11 [expr.prim.general]p4:
+    //   Otherwise, if a member-declarator declares a non-static data member
+    //  (9.2) of a class X, the expression this is a prvalue of type "pointer
+    //  to X" within the optional brace-or-equal-initializer. It shall not
+    //  appear elsewhere in the member-declarator.
+    CXXThisScopeRAII ThisScope(*this, Instantiation, (unsigned)0);
+
+    for (unsigned I = 0, N = FieldsWithMemberInitializers.size(); I != N; ++I) {
+      FieldDecl *OldField = FieldsWithMemberInitializers[I].first;
+      FieldDecl *NewField = FieldsWithMemberInitializers[I].second;
+      Expr *OldInit = OldField->getInClassInitializer();
+
+      ExprResult NewInit = SubstInitializer(OldInit, TemplateArgs,
+                                            /*CXXDirectInit=*/false);
+      if (NewInit.isInvalid())
+        NewField->setInvalidDecl();
+      else {
+        Expr *Init = NewInit.get();
+        assert(Init && "no-argument initializer in class");
+        assert(!isa<ParenListExpr>(Init) && "call-style init in class");
+        // If we are an auto member, deduce the type from the initializer.
+        if (NewField->getType()->getContainedAutoType())
+          DeduceAutoMemberTypeFromInitExpr(Init, NewField);
+        ActOnStartCXXInClassMemberInitializer();
+        ActOnFinishCXXInClassMemberInitializer(NewField, Init->getLocStart(), Init);
+      }
+    }
+  }
   // Instantiate late parsed attributes, and attach them to their decls.
   // See Sema::InstantiateAttrs
   for (LateInstantiatedAttrVec::iterator I = LateAttrs.begin(),

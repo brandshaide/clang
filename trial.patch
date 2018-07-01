@@ -1,0 +1,24 @@
+diff --git a/README.txt b/README.txt
+index 44ce723..902fc11 100644
+--- a/README.txt
++++ b/README.txt
+@@ -24,3 +24,6 @@ on the Clang development mailing list:
+
+ If you find a bug in Clang, please file it in the LLVM bug tracker:
+   http://llvm.org/bugs/
++
++For this branch use llvm 4d00d7aadb69d4e9bbc29b55ba092c1f568666df
++
+diff --git a/lib/Parse/ParseAST.cpp b/lib/Parse/ParseAST.cpp
+index 5678ece..a43491d 100644
+--- a/lib/Parse/ParseAST.cpp
++++ b/lib/Parse/ParseAST.cpp
+@@ -162,3 +162,8 @@ void clang::ParseAST(Sema &S, bool PrintStats, bool SkipFunctionBodies) {
+     Consumer->PrintStats();
+   }
+ }
++
++
++// Please comment out the following two lines if compiling this code.
++#define DONT_USE_ANON_FV
++#include "../../../../clang-git-fv/my-code/fv_debug.cpp"

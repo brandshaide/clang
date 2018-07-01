@@ -2413,7 +2413,13 @@ static bool HandleSizeof(EvalInfo &Info, SourceLocation Loc,
     Info.FFDiag(Loc);
     return false;
   }
-
+  /* This check disables sizeof as a constant expression!
+  if (Info.Ctx.isClassTypeUndergoingNSDMIParsing(
+          Type->getCanonicalTypeUnqualified().getTypePtr())) {
+    Info.Diag(Loc);
+    return false;
+  }
+  //*/
   Size = Info.Ctx.getTypeSizeInChars(Type);
   return true;
 }

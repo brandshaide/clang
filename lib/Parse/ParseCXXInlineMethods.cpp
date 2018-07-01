@@ -188,9 +188,16 @@ NamedDecl *Parser::ParseCXXInlineMethodDef(AccessSpecifier AS,
 void Parser::ParseCXXNonStaticMemberInitializer(Decl *VarD) {
   assert(Tok.isOneOf(tok::l_brace, tok::equal) &&
          "Current token not a '{' or '='!");
+  // This assert has to be disabled, since VarD can be null - for
+  // instance when parsing variable member templates.
+  //assert(isa<ValueDecl>(VarD) && "Should at least have a type for query");
+  ValueDecl *const ValD = dyn_cast_or_null<ValueDecl>(VarD);
+  LateParsedMemberInitializer *MI = 0;
+  if (ValD && ValD->getType()->getContainedAutoType())
+    MI = new LateParsedAutoMemberInitializer(this, VarD);
+  else
+    MI = new LateParsedMemberInitializer(this, VarD);
 
-  LateParsedMemberInitializer *MI =
-    new LateParsedMemberInitializer(this, VarD);
   getCurrentClass().LateParsedDeclarations.push_back(MI);
   CachedTokens &Toks = MI->Toks;
 
@@ -225,6 +232,7 @@ void Parser::ParseCXXNonStaticMemberInitializer(Decl *VarD) {
 Parser::LateParsedDeclaration::~LateParsedDeclaration() {}
 void Parser::LateParsedDeclaration::ParseLexedMethodDeclarations() {}
 void Parser::LateParsedDeclaration::ParseLexedMemberInitializers() {}
+void Parser::LateParsedDeclaration::ParseLexedAutoMemberInitializers() {}
 void Parser::LateParsedDeclaration::ParseLexedMethodDefs() {}
 
 Parser::LateParsedClass::LateParsedClass(Parser *P, ParsingClass *C)
@@ -241,6 +249,10 @@ void Parser::LateParsedClass::ParseLexedMethodDeclarations() {
 void Parser::LateParsedClass::ParseLexedMemberInitializers() {
   Self->ParseLexedMemberInitializers(*Class);
 }
+void Parser::LateParsedClass::ParseLexedAutoMemberInitializers() {
+  Self->ParseLexedAutoMemberInitializers(*Class);
+}
+
 
 void Parser::LateParsedClass::ParseLexedMethodDefs() {
   Self->ParseLexedMethodDefs(*Class);
@@ -256,6 +268,15 @@ void Parser::LexedMethod::ParseLexedMethodDefs() {
 
 void Parser::LateParsedMemberInitializer::ParseLexedMemberInitializers() {
   Self->ParseLexedMemberInitializer(*this);
+}
+
+void Parser::LateParsedAutoMemberInitializer::ParseLexedMemberInitializers() {
+  Self->ParseDeducedAutoMemberInitializer(*this);
+}
+
+void
+Parser::LateParsedAutoMemberInitializer::ParseLexedAutoMemberInitializers() {
+  Self->ParseLexedAutoMemberInitializer(*this);
 }
 
 /// ParseLexedMethodDeclarations - We finished parsing the member
@@ -611,6 +632,56 @@ void Parser::ParseLexedMemberInitializers(ParsingClass &Class) {
   Actions.ActOnFinishDelayedMemberInitializers(Class.TagOrTemplate);
 }
 
+
+/// ParseLexedMemberInitializers - We finished parsing the member specification
+/// of a top (non-nested) C++ class. Now go over the stack of lexed data member
+/// initializers that were collected during its parsing and parse them all.
+void Parser::ParseLexedAutoMemberInitializers(ParsingClass &Class) {
+  bool HasTemplateScope = !Class.TopLevelClass && Class.TemplateScope;
+  ParseScope ClassTemplateScope(this, Scope::TemplateParamScope,
+    HasTemplateScope);
+  TemplateParameterDepthRAII CurTemplateDepthTracker(TemplateParameterDepth);
+  if (HasTemplateScope) {
+    Actions.ActOnReenterTemplateScope(getCurScope(), Class.TagOrTemplate);
+    ++CurTemplateDepthTracker;
+  }
+  // Set or update the scope flags.
+  bool AlreadyHasClassScope = Class.TopLevelClass;
+  unsigned ScopeFlags = Scope::ClassScope|Scope::DeclScope;
+  ParseScope ClassScope(this, ScopeFlags, !AlreadyHasClassScope);
+  ParseScopeFlags ClassScopeFlags(this, ScopeFlags, AlreadyHasClassScope);
+
+  // if (!AlreadyHasClassScope)
+  //  Actions.ActOnStartDelayedMemberDeclarations(getCurScope(),
+  //                                              Class.TagOrTemplate);
+
+  if (!Class.LateParsedDeclarations.empty()) {
+    // Set CXXThisOverride for when there is no member function
+    // that contains this declaration.
+    Sema::CXXThisScopeRAII ThisScope(Actions, Class.TagOrTemplate,
+      /*TypeQuals=*/(unsigned)0);
+    // Get the CXXRecordDEcl from the Tag Or Template.
+    CXXRecordDecl *Record = 0;
+    if (ClassTemplateDecl *Template =
+      dyn_cast<ClassTemplateDecl>(Class.TagOrTemplate))
+      Record = Template->getTemplatedDecl();
+    else
+        Record = cast<CXXRecordDecl>(Class.TagOrTemplate);
+
+    //Actions.pushClassUndergoingNSDMIParsing(Record);
+    for (size_t i = 0; i < Class.LateParsedDeclarations.size(); ++i) {
+        Class.LateParsedDeclarations[i]->ParseLexedAutoMemberInitializers();
+    }
+    //Actions.popClassUndergoingNSDMIParsing();
+  }
+  //if (!AlreadyHasClassScope)
+  //  Actions.ActOnFinishDelayedMemberDeclarations(getCurScope(),
+  //  Class.TagOrTemplate);
+
+  // Actions.ActOnFinishDelayedMemberInitializers(Class.TagOrTemplate);
+}
+
+
 void Parser::ParseLexedMemberInitializer(LateParsedMemberInitializer &MI) {
   if (!MI.Field || MI.Field->isInvalidDecl())
     return;
@@ -653,6 +724,78 @@ void Parser::ParseLexedMemberInitializer(LateParsedMemberInitializer &MI) {
   if (Tok.getEofData() == MI.Field)
     ConsumeAnyToken();
 }
+
+
+
+void
+Parser::ParseLexedAutoMemberInitializer(LateParsedAutoMemberInitializer &MI) {
+  if (!MI.Field || MI.Field->isInvalidDecl())
+    return;
+  // For nested classes, auto member's must be parsed at their closing brace.
+  // Typically - all delayed parsing of a nested class is delayed until the
+  //   outermost class's closing brace - but we can not wait for a nested
+  //   class with an auto member, since we must determine its layout at
+  //   closing brace.
+  // Since this routine can get called again when the outermost class is being
+  // completed, we need to maintain idempotency by checking if the InitExpression
+  // has already been parsed - and if so, do not reparse it.
+  //  Note: the ActOnInitializerExpression is only called once, and that is
+  //  at the completion of the outer most class.
+  if (MI.InitExpr)
+    return;
+
+  // Append the current token at the end of the new token stream so that it
+  // doesn't get lost.
+  MI.Toks.push_back(Tok);
+  PP.EnterTokenStream(MI.Toks, true);
+
+  // Consume the previously pushed token.
+  ConsumeAnyToken(/*ConsumeCodeCompletionTok=*/true);
+
+  SourceLocation EqualLoc;
+
+  ExprResult Init =
+      ParseCXXMemberInitializer(MI.Field, /*IsFunction=*/false, EqualLoc);
+  // The next token should be our artificial terminating EOF token.
+  if (Tok.isNot(tok::eof)) {
+    SourceLocation EndLoc = PP.getLocForEndOfToken(PrevTokLocation);
+    if (!EndLoc.isValid())
+      EndLoc = Tok.getLocation();
+    // No fixit; we can't recover as if there were a semicolon here.
+    Diag(EndLoc, diag::err_expected_semi_decl_list);
+
+    // Consume tokens until we hit the artificial EOF.
+    while (Tok.isNot(tok::eof))
+      ConsumeAnyToken();
+  }
+  ConsumeAnyToken();
+
+  MI.InitExpr = Init.get();
+  if (!MI.InitExpr) {
+    MI.Field->setInvalidDecl();
+    return;
+  }
+  MI.EqualLoc = EqualLoc;
+  assert(isa<FieldDecl>(MI.Field));
+  Actions.DeduceAutoMemberTypeFromInitExpr(MI.InitExpr,
+                                           cast<FieldDecl>(MI.Field));
+
+  if (MI.Field->isInvalidDecl()) return;
+
+
+}
+// The Auto member has been deduced, the initliazer has been parsed, names have
+// been bound - continue with semantic analysis of the initializer.
+void
+Parser::ParseDeducedAutoMemberInitializer(LateParsedAutoMemberInitializer &MI) {
+  if (!MI.Field || MI.Field->isInvalidDecl() || !MI.InitExpr)
+    return;
+
+  Actions.ActOnStartCXXInClassMemberInitializer();
+  Actions.ActOnFinishCXXInClassMemberInitializer(MI.Field, MI.EqualLoc, MI.InitExpr);
+
+}
+
 
 /// ConsumeAndStoreUntil - Consume and store the token at the passed token
 /// container until the token 'T' is reached (which gets
